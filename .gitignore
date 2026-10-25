@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-macos/
+.venv-universal2/
 .pytest_cache/
 
 # 本地配置与工具

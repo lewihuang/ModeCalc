@@ -11,14 +11,19 @@
 
   // ── 字体加载 ──────────────────────────────────────
   //
-  // VexFlow 的 loadFonts() 使用 FontFace() API (file:// 协议下 Chromium 静默阻塞该 API)
-  // 改用 CSS @font-face 预先注册字体（见 style.css）+ document.fonts.load() 显式加载
+  // Reuse the local CSS @font-face definitions on both file:// and loopback HTTP.
+  // Recheck after bridge injection: WebKit can rebuild CSS-connected font faces.
 
   function initFonts() {
-    return Promise.all([
-      document.fonts.load('16px Bravura'),
-      document.fonts.load('16px Academico'),
-    ]);
+    // Load the CSS-connected faces themselves. WebKit may resolve a
+    // FontFaceSet.load() request without loading an unused fallback face.
+    // This also preserves Windows' existing file:// @font-face definitions.
+    const faces = Array.from(document.fonts).filter(face => {
+      const family = face.family.replace(/^["']|["']$/g, '');
+      return family === 'Bravura' || family === 'Academico';
+    });
+    if (faces.length !== 2) return Promise.reject(new Error('缺少谱表字体定义'));
+    return Promise.all(faces.map(face => face.load()));
   }
 
   function _dbFontOk(ok) {
@@ -26,21 +31,29 @@
     if (el) el.textContent = 'Font: ' + (ok ? 'OK' : 'FAIL');
   }
 
-  initFonts().then(() => {
-    VexFlow.setFonts('Bravura', 'Academico');
-    fontsLoaded = true;
-    _dbFontOk(true);
-    if (window._pendingStaffData) {
-      renderStaff(window._pendingStaffData);
-    }
-  }).catch(err => {
-    console.warn('[staff] 字体加载失败，尝试无字体渲染:', err.message);
-    fontsLoaded = true;
-    _dbFontOk(false);
-    if (window._pendingStaffData) {
-      try { renderStaff(window._pendingStaffData); } catch (_) {}
-    }
-  });
+  function loadStaffFonts() {
+    fontsLoaded = false;
+    return initFonts().then((faces) => {
+      if (faces.some(face => face.status !== 'loaded')) throw new Error("谱表字体未就绪");
+      VexFlow.setFonts('Bravura', 'Academico');
+      fontsLoaded = true;
+      _dbFontOk(true);
+      if (window._pendingStaffData) {
+        renderStaff(window._pendingStaffData.notes, window._pendingStaffData.keySignature);
+      }
+      return true;
+    }).catch(err => {
+      console.warn('[staff] 字体加载失败，尝试无字体渲染:', err.message);
+      fontsLoaded = true;
+      _dbFontOk(false);
+      if (window._pendingStaffData) {
+        try { renderStaff(window._pendingStaffData.notes, window._pendingStaffData.keySignature); } catch (_) {}
+      }
+      return false;
+    });
+  }
+  window.ensureStaffFonts = loadStaffFonts;
+  window.modecalcFontsReady = loadStaffFonts();
 
   // ── 音符格式化 ────────────────────────────────────
 
@@ -70,7 +83,7 @@
   window.renderStaff = function (activeNotes, keySignature) {
     keySignature = keySignature || 'C';
     if (!fontsLoaded) {
-      window._pendingStaffData = activeNotes;
+      window._pendingStaffData = { notes: activeNotes, keySignature: keySignature };
       return;
     }
 

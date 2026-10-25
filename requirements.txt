@@ -1,6 +1,4 @@
-mido
-python-rtmidi
-pywebview
-pyinstaller
-aiohttp
-pytest
+-r requirements-runtime.txt
+-r requirements-build.txt
+-r requirements-dev.txt
+-r requirements-macos.txt

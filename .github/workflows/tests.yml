@@ -6,7 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -23,3 +27,42 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+      - name: Build Windows executable
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: build.bat
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: ModeCalc-Windows
+          path: dist/ModeCalc.exe
+
+      - name: Build macOS standalone app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: MODECALC_PYTHON="$(command -v python)" bash scripts/build_macos.sh
+
+      - name: Exercise real WKWebView and packaged bridge
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          arch="$(python -c 'import platform; print(platform.machine())')"
+          export MODECALC_SMOKE_DIAGNOSTICS="$RUNNER_TEMP/modecalc-smoke"
+          python scripts/smoke_macos.py "dist/macos-$arch/ModeCalc.app"
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: ModeCalc-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+      - uses: actions/upload-artifact@v4
+        if: failure() && runner.os == 'macOS'
+        with:
+          name: diagnostics-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/modecalc-smoke/

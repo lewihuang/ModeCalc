@@ -6,22 +6,34 @@
 
 import json
 import os
+import sys
 from pathlib import Path
+
+from runtime_paths import settings_path
 
 SETTINGS_VERSION = 2
 
 
 def default_settings_path() -> Path:
     """返回设置文件路径。"""
-    base = os.environ.get("MODECALC_SETTINGS_DIR")
-    if not base:
-        base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "ModeCalc" / "settings.json"
+    return settings_path()
 
 
 def load_settings(path: str | os.PathLike | None = None) -> dict:
     """读取设置；文件不存在、损坏或不是 JSON 对象时返回空 dict。"""
     p = Path(path) if path else default_settings_path()
+    if path is None and sys.platform == "darwin" and not os.environ.get("MODECALC_SETTINGS_DIR"):
+        # Copy a valid legacy Mac file once; never overwrite the new location
+        # or remove the user's original file if migration fails.
+        legacy = Path.home() / "ModeCalc" / "settings.json"
+        if not p.exists() and legacy != p:
+            try:
+                old = json.loads(legacy.read_text(encoding="utf-8"))
+                if isinstance(old, dict):
+                    save_settings(old, p)
+                    return old
+            except (OSError, ValueError):
+                pass
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):

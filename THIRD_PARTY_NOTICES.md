@@ -37,3 +37,19 @@
 - 本仓库文件：`static/fonts/Quicksand-Medium.ttf`
 
 SIL Open Font License 1.1 全文见 [`LICENSES/OFL-1.1.txt`](LICENSES/OFL-1.1.txt)。
+
+## Python 桌面运行时
+
+macOS standalone App 还包含以下运行组件：
+
+- CPython — PSF License — https://www.python.org/psf/license/
+- Mido — MIT — https://github.com/mido/mido
+- python-rtmidi / RtMidi — MIT 及其上游许可 — https://github.com/SpotlightKid/python-rtmidi
+- pywebview — BSD-3-Clause — https://github.com/r0x0r/pywebview
+- PyObjC 框架绑定 — MIT — https://github.com/ronaldoussoren/pyobjc
+- Bottle — MIT — https://github.com/bottlepy/bottle
+- proxy-tools — MIT — https://github.com/jtushman/proxy-tools
+- typing_extensions — PSF-2.0 — https://github.com/python/typing_extensions
+- packaging — Apache-2.0 / BSD-2-Clause — https://github.com/pypa/packaging
+
+构建脚本将实际运行依赖 wheel 中的许可证文件与发行元数据、CPython 许可证复制到 App 的 `Contents/Resources/ThirdPartyLicenses/`。py2app 和 PyInstaller 为分别用于 Mac 与 Windows 的构建工具。

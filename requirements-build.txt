@@ -1,0 +1,3 @@
+pyinstaller==6.22.3; sys_platform == "win32"
+py2app==0.28.10; sys_platform == "darwin"
+setuptools==80.10.2; sys_platform == "darwin"

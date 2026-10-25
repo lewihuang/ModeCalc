@@ -1,0 +1,8 @@
+-r requirements-runtime.txt
+-r requirements-build.txt
+pyobjc-core==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Quartz==12.2.2; sys_platform == "darwin"
+pyobjc-framework-WebKit==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Security==12.2.2; sys_platform == "darwin"
+pyobjc-framework-UniformTypeIdentifiers==12.2.2; sys_platform == "darwin"

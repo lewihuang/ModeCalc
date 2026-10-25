@@ -1,0 +1,70 @@
+name: macOS release packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          test -n "$CERTIFICATE"
+          test -n "$KEYCHAIN_PASSWORD"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/developer.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/modecalc.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/modecalc.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/modecalc.keychain-db"
+          security import "$RUNNER_TEMP/developer.p12" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -t cert -f pkcs12 -k "$RUNNER_TEMP/modecalc.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/modecalc.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/modecalc.keychain-db" login.keychain-db
+          security default-keychain -d user -s "$RUNNER_TEMP/modecalc.keychain-db"
+      - name: Build and notarize
+        env:
+          MODECALC_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
+        shell: bash
+        run: |
+          test -n "$MODECALC_SIGN_IDENTITY"
+          export MODECALC_PYTHON="$(command -v python)"
+          export MODECALC_NOTARY_PROFILE=ModeCalc-CI
+          xcrun notarytool store-credentials "$MODECALC_NOTARY_PROFILE" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD"
+          bash scripts/build_macos.sh
+          arch="$(python -c 'import platform; print(platform.machine())')"
+          bash scripts/notarize_macos.sh "dist/macos-$arch/ModeCalc.app"
+          python scripts/smoke_macos.py "dist/macos-$arch/ModeCalc.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notarized-${{ matrix.os }}
+          path: |
+            dist/macos-*/*.zip
+            dist/macos-*/*.sha256
+      - name: Clean signing material
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/modecalc.keychain-db" || true
+          rm -f "$RUNNER_TEMP/developer.p12"

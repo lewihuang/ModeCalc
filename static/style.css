@@ -35,6 +35,11 @@ html, body {
   overflow: hidden;
 }
 
+/* Keep both notation faces in use after WebKit rebuilds CSS font objects. */
+#font-preload { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.preload-music { font-family: Bravura; }
+.preload-text { font-family: Academico; }
+
 body {
   display: flex;
   flex-direction: column;
@@ -840,3 +845,19 @@ body {
   z-index: 999;
 }
 #debug-bar span { white-space: nowrap; }
+
+/* The native window may be resized on macOS and Windows. */
+#staff { min-height: 0; overflow: hidden; flex-basis: clamp(240px, 28vw, 340px); }
+#staff > svg, #staff > canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+#control-panel { flex-basis: clamp(260px, 30vw, 360px); }
+.settings-top { flex-wrap: wrap; }
+.settings-head, .scale-row {
+  grid-template-columns: 48px minmax(160px, 1fr) 250px minmax(150px, 240px) 48px;
+}
+#debug-bar { overflow-x: auto; }
+@media (max-height: 700px) {
+  body { gap: 6px; padding-top: 8px; }
+  #chord-name { height: 3rem; font-size: 2rem; padding-top: 5px; }
+  #fretboard { height: 105px; }
+  #keyboard { height: 90px; }
+}

@@ -2,25 +2,23 @@
 
 from unittest.mock import MagicMock, patch, call
 import pytest
+import mido
 from midi_handler import MidiHandler
 
 
+@pytest.fixture(autouse=True)
+def isolated_backend(monkeypatch):
+    # Unit tests never touch CoreMIDI/WinMM, even when open() enumerates ports.
+    monkeypatch.setattr("midi_handler.mido.get_input_names", lambda: ["TestPort"])
+    monkeypatch.setattr("midi_handler.sys.platform", "win32")
+
+
 def _note_on(note=60, velocity=100):
-    """模拟 note_on 消息"""
-    msg = MagicMock()
-    msg.type = "note_on"
-    msg.note = note
-    msg.velocity = velocity
-    return msg
+    return mido.Message("note_on", note=note, velocity=velocity)
 
 
 def _note_off(note=60):
-    """模拟 note_off 消息"""
-    msg = MagicMock()
-    msg.type = "note_off"
-    msg.note = note
-    msg.velocity = 0
-    return msg
+    return mido.Message("note_off", note=note)
 
 
 def test_open_with_port_name():
@@ -29,7 +27,10 @@ def test_open_with_port_name():
         mock_port = MagicMock()
         mock_open.return_value = mock_port
         h.open("TestPort")
-        mock_open.assert_called_once_with("TestPort", callback=h._callback)
+        assert mock_open.call_args.args == ("TestPort",)
+        callback = mock_open.call_args.kwargs["callback"]
+        callback(_note_on())
+        assert h.poll() == {60}
 
 
 def test_open_all_ports():
@@ -42,8 +43,7 @@ def test_open_all_ports():
         h.open()
         # 虚拟端口被过滤，只打开 Port A 和 Port B
         assert mock_open.call_count == 2
-        mock_open.assert_any_call("Port A", callback=h._callback)
-        mock_open.assert_any_call("Port B", callback=h._callback)
+        assert [c.args[0] for c in mock_open.call_args_list] == ["Port A", "Port B"]
 
 
 def test_open_all_virtual_raises():

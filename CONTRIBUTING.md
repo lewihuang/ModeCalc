@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-- Windows 10 / 11
+- Windows 10 / 11，或 macOS（构建与验证范围见 [macOS 构建说明](docs/MACOS_BUILD.md)）
 - Python 3.12
 
 ```powershell
@@ -51,3 +51,7 @@ git grep -n -E "token|secret|password|C:\\\\Users"
 ## 许可证
 
 提交代码即表示同意以本项目的 [MIT License](LICENSE) 授权。
+
+## macOS 开发与构建
+
+Mac 使用 Python 3.12 framework + py2app；Windows 保留 PyInstaller。执行 `bash scripts/build_macos.sh` 构建，使用 `python scripts/smoke_macos.py dist/macos-arm64/ModeCalc.app` 验证真实 CoreMIDI 和 WKWebView。测试配置与用户数据隔离，详见 [构建说明](docs/MACOS_BUILD.md)。

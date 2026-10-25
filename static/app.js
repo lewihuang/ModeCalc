@@ -29,6 +29,9 @@
 
   let analysisMode = 'chord';
   let settingsOpen = false;
+  let latestState = null;
+  let lastSequence = -1;
+  let desktopInitializing = false;
   var scaleRows = [];
   var scaleSearch = '';
   var libraryLoaded = false;
@@ -280,6 +283,7 @@
     if (elSettingsView) elSettingsView.classList.add('hidden');
     _lastDataStr = '';
     loadScaleLibrary();
+    if (latestState) updateUI(latestState, true);
   }
 
   function buildMiniKeyboard(pcs, onChange) {
@@ -750,7 +754,7 @@
   // ── WebSocket (仅浏览器模式使用) ──────────────────
 
   function connect() {
-    if (location.protocol === 'file:' || window.pywebview) {
+    if (location.hash === '#desktop' || location.protocol === 'file:' || window.pywebview) {
       return;
     }
 
@@ -796,7 +800,13 @@
   // ── UI 更新 (含去重) ──────────────────────────────
 
   var _lastDataStr = '';
-  function updateUI(data) {
+  function updateUI(data, replay) {
+    if (typeof data.sequence === 'number') {
+      if (!replay && data.sequence <= lastSequence) return;
+      lastSequence = data.sequence;
+    }
+    latestState = data;
+    if (data.midi) applyMidiStatus(Object.assign({}, data.midi, { sequence: data.sequence }));
     if (settingsOpen) return;
 
     var s = JSON.stringify(data);
@@ -1002,8 +1012,9 @@
 
   // ── MIDI 设备列表 ──────────────────────────────────
 
-  var _midiPorts = [];
+  var _midiPorts = null; // First empty enumeration must still build All / Refresh.
   var _selectedMidiPort = null; // null = All
+  var _lastMidiSequence = -1;
 
   function setMidiPorts(ports) {
     _midiPorts = ports;
@@ -1041,24 +1052,57 @@
       });
     });
 
+    if (window.pywebview && window.pywebview.api.refresh_midi_ports) {
+      var refresh = document.createElement('div');
+      refresh.className = 'menu-option';
+      refresh.textContent = '刷新设备';
+      refresh.addEventListener('click', function () {
+        window.pywebview.api.refresh_midi_ports().then(applyMidiStatus)
+          .catch(function (e) { setDebug('db-midi', e.message); });
+        closeAllMenus();
+      });
+      menu.appendChild(refresh);
+    }
     // 标记当前选中
     syncMidiMenuSelection();
   }
 
-  function selectMidiPort(port) {
-    _selectedMidiPort = port || null; // '' → null = All
-    if (window.pywebview && window.pywebview.api.select_midi_port) {
-      window.pywebview.api.select_midi_port(_selectedMidiPort);
-    } else if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'select_midi_port', port: _selectedMidiPort }));
+  function applyMidiStatus(status) {
+    if (typeof status.sequence === 'number') {
+      if (status.sequence < _lastMidiSequence) return;
+      _lastMidiSequence = status.sequence;
     }
+    _selectedMidiPort = status.selected || null;
+    var ports = status.available || [];
+    if (JSON.stringify(ports) !== JSON.stringify(_midiPorts)) setMidiPorts(ports);
     syncMidiMenuSelection();
+    var opened = status.opened || [];
+    var label = opened.length ? ('MIDI: ' + opened.join(', ')) : 'MIDI: 等待设备';
+    if (status.error) label += ' · ' + status.error;
+    setDebug('db-midi', label);
+  }
+
+  function selectMidiPort(port) {
+    var requested = port || null;
+    if (window.pywebview && window.pywebview.api.select_midi_port) {
+      setDebug('db-midi', 'MIDI: 正在连接…');
+      window.pywebview.api.select_midi_port(requested).then(function (result) {
+        if (result && typeof result.sequence === 'number' && result.sequence < _lastMidiSequence) return;
+        if (result && result.state) applyMidiStatus(result);
+        if (!result || !result.ok) setDebug('db-midi', 'MIDI: ' + ((result && result.error) || '连接失败'));
+      }).catch(function (error) { setDebug('db-midi', 'MIDI: ' + error.message); });
+    } else if (ws && ws.readyState === WebSocket.OPEN) {
+      _selectedMidiPort = requested;
+      ws.send(JSON.stringify({ type: 'select_midi_port', port: requested }));
+      syncMidiMenuSelection();
+    }
   }
 
   function syncMidiMenuSelection() {
     var menu = document.getElementById('midi-menu');
     if (!menu) return;
     menu.querySelectorAll('.menu-option').forEach(function (opt) {
+      if (opt.dataset.port === undefined) return;
       var val = opt.dataset.port || null;
       opt.classList.toggle('selected', val === _selectedMidiPort);
     });
@@ -1071,8 +1115,50 @@
 
   // ── 启动 ──────────────────────────────────────────
 
-  window.addEventListener('pywebviewready', loadScaleLibrary);
-  loadScaleLibrary();
+  async function initializeDesktop() {
+    if (desktopInitializing || !(window.pywebview && window.pywebview.api)) return;
+    desktopInitializing = true;
+    try {
+      var fontsOk = await window.ensureStaffFonts();
+      var initial = await window.pywebview.api.frontend_ready({ fonts: !!fontsOk });
+      var branding = document.querySelector('#branding > div');
+      if (branding) branding.textContent = 'ModeCalc v' + initial.version;
+      scaleRows = initial.library.rows || [];
+      libraryLoaded = true;
+      renderScaleSidebar();
+      if (initial.state && initial.state.sequence) updateUI(initial.state);
+      window.__modecalcReady = true;
+      if (!fontsOk) setSettingsError('谱表字体加载失败，请重新安装完整应用');
+    } catch (error) {
+      desktopInitializing = false;
+      setDebug('db-midi', '启动失败: ' + error.message);
+      console.error('[desktop]', error);
+    }
+  }
+
+  window.addEventListener('pywebviewready', initializeDesktop);
+  initializeDesktop();
+  if (location.hash !== '#desktop' && location.protocol !== 'file:') loadScaleLibrary();
+  if (location.hash === '#desktop') setTimeout(function () {
+    if (!window.__modecalcReady) setDebug('db-midi', '启动超时，请查看应用日志并重新启动');
+  }, 15000);
+
+  document.addEventListener('keydown', function (event) {
+    if (event.metaKey && event.key === ',') {
+      event.preventDefault();
+      openSettings();
+    }
+  });
+
+  var resizeTimer;
+  if (typeof ResizeObserver === 'function') new ResizeObserver(function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      createKeyboard('keyboard');
+      createFretboard('fretboard');
+      updateKeyboardHighlight();
+    }, 80);
+  }).observe(document.getElementById('keyboard'));
 
   bindAnalysisControls();
   updateSettingsButton();
